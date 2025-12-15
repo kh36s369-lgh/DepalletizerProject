@@ -1,0 +1,233 @@
+﻿<UserControl x:Class="MBDManager.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:MBDManager.ViewModels"
+             xmlns:vm="clr-namespace:MBDManager.ViewModels"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+             mc:Ignorable="d" 
+             d:DataContext="{d:DesignInstance vm:DashboardViewModel, IsDesignTimeCreatable=True}"
+             d:DesignHeight="900" d:DesignWidth="1700">
+
+    <UserControl.Resources>
+        <Style x:Key="KpiCardStyle" TargetType="materialDesign:Card">
+            <Setter Property="Padding" Value="20"/>
+            <Setter Property="Margin" Value="10"/>
+            <Setter Property="UniformCornerRadius" Value="8"/>
+        </Style>
+
+        <Style x:Key="StatusLightStyle" TargetType="Ellipse">
+            <Setter Property="Width" Value="30"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Stroke" Value="Gray"/>
+            <Setter Property="StrokeThickness" Value="1"/>
+            <Setter Property="Fill" Value="LightGray"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding}" Value="Normal">
+                    <Setter Property="Fill" Value="Green"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding}" Value="Warning">
+                    <Setter Property="Fill" Value="Orange"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding}" Value="Error">
+                    <Setter Property="Fill" Value="Red"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="3*"/>
+            <ColumnDefinition Width="1*"/>
+        </Grid.ColumnDefinitions>
+
+        <Grid Grid.Row="0" Grid.Column="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <materialDesign:Card Grid.Column="0" Style="{StaticResource KpiCardStyle}">
+                <StackPanel>
+                    <materialDesign:PackIcon Kind="PackageVariantClosed" Foreground="Gray" Height="30" Width="30"/>
+                    <TextBlock Text="총 처리량" FontSize="16" Margin="0,10,0,5" Foreground="Gray"/>
+                    <TextBlock Text="{Binding Summary.TotalCount}" FontSize="40" FontWeight="Bold"/>
+                </StackPanel>
+            </materialDesign:Card>
+
+            <materialDesign:Card Grid.Column="1" Style="{StaticResource KpiCardStyle}">
+                <StackPanel>
+                    <materialDesign:PackIcon Kind="CheckCircle" Foreground="Green" Height="30" Width="30"/>
+                    <TextBlock Text="정상 처리" FontSize="16" Margin="0,10,0,5" Foreground="Gray"/>
+                    <TextBlock Text="{Binding Summary.NormalCount}" FontSize="40" FontWeight="Bold"/>
+                </StackPanel>
+            </materialDesign:Card>
+
+            <materialDesign:Card Grid.Column="2" Style="{StaticResource KpiCardStyle}">
+                <StackPanel>
+                    <materialDesign:PackIcon Kind="AlertCircle" Foreground="Red" Height="30" Width="30"/>
+                    <TextBlock Text="불량 처리" FontSize="16" Margin="0,10,0,5" Foreground="Gray"/>
+                    <TextBlock Text="{Binding Summary.DefectCount}" FontSize="40" FontWeight="Bold"/>
+                </StackPanel>
+            </materialDesign:Card>
+        </Grid>
+
+        <materialDesign:Card Grid.Row="0" Grid.Column="1" Style="{StaticResource KpiCardStyle}">
+            <StackPanel>
+                <TextBlock Text="시스템 종합 상태" FontSize="18" FontWeight="Medium" Margin="0,0,0,15"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding MasterStatusText}" FontSize="32" FontWeight="Bold" VerticalAlignment="Center"/>
+
+                    <Ellipse Grid.Column="1" Style="{StaticResource StatusLightStyle}"
+                             DataContext="{Binding MasterStatus}"/>
+                </Grid>
+                <Separator Margin="0,15,0,10"/>
+                <StackPanel Margin="0,5,0,0">
+                    <TextBlock Text="카메라: 🟢 / ONNX: 🟢 / AGV: 🟢 / 서버: 🟡" Foreground="Gray"/>
+                </StackPanel>
+            </StackPanel>
+        </materialDesign:Card>
+
+        <materialDesign:Card Grid.Row="1" Grid.Column="0" Style="{StaticResource KpiCardStyle}">
+            <StackPanel>
+                <TextBlock Text="구역 팔레트 진행 현황" FontSize="18" FontWeight="Medium" Margin="0,0,0,20"/>
+                <ItemsControl ItemsSource="{Binding PaletteStatuses}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Columns="4"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border BorderBrush="LightGray" BorderThickness="1" CornerRadius="5" Padding="15" Margin="10">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding ZoneName}" FontSize="24" FontWeight="Bold"
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock Text="{Binding StatusText}" FontSize="36" 
+                                               HorizontalAlignment="Center" Margin="0,10,0,15"/>
+                                    <ProgressBar Value="{Binding CurrentCount}" Maximum="{Binding MaxCount}" 
+                                                 Height="10" Style="{StaticResource MaterialDesignLinearProgressBar}"/>
+
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0"
+                                                Visibility="{Binding IsFull, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <materialDesign:PackIcon Kind="Alert" Foreground="Red" VerticalAlignment="Center"/>
+                                        <TextBlock Text=" 회수 필요" Foreground="Red" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </materialDesign:Card>
+
+        <materialDesign:Card Grid.Row="1" Grid.Column="0" Style="{StaticResource KpiCardStyle}">
+            <StackPanel>
+                <TextBlock Text="구역 팔레트 진행 현황" FontSize="18" FontWeight="Medium" Margin="0,0,0,20"/>
+
+                <ItemsControl ItemsSource="{Binding PaletteStatuses}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Columns="4"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border BorderBrush="LightGray" BorderThickness="1" CornerRadius="5" Padding="15" Margin="10">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding ZoneName}" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="{Binding StatusText}" FontSize="36" HorizontalAlignment="Center" Margin="0,10,0,15"/>
+                                    <ProgressBar Value="{Binding CurrentCount}" Maximum="{Binding MaxCount}" Height="10" Style="{StaticResource MaterialDesignLinearProgressBar}"/>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0" Visibility="{Binding IsFull, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <materialDesign:PackIcon Kind="Alert" Foreground="Red" VerticalAlignment="Center"/>
+                                        <TextBlock Text=" 회수 필요" Foreground="Red" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Separator Margin="0,20"/>
+
+                <TextBlock Text="상세 분석 지표" FontSize="18" FontWeight="Medium" Margin="0,0,0,15"/>
+
+                <UniformGrid Columns="3" Height="330">
+
+                    <StackPanel Margin="10">
+                        <TextBlock Text="총 택배 물량" FontSize="13" HorizontalAlignment="Center" Foreground="White" Margin="0,0,0,10"/>
+                        <lvc:PieChart Series="{Binding DonutSeries1}" LegendPosition="Hidden" Height="290"/>
+                    </StackPanel>
+
+                    <StackPanel Margin="10">
+                        <TextBlock Text="구역별 택배 물량" FontSize="13" HorizontalAlignment="Center" Foreground="White" Margin="0,0,0,10"/>
+                        <lvc:PieChart Series="{Binding DonutSeries2}" LegendPosition="Hidden" Height="290"/>
+                    </StackPanel>
+
+                    <StackPanel Margin="10">
+                        <TextBlock Text="불량률" FontSize="13" HorizontalAlignment="Center" Foreground="White" Margin="0,0,0,10"/>
+                        <lvc:PieChart Series="{Binding DonutSeries3}" LegendPosition="Hidden" Height="290"/>
+                    </StackPanel>
+
+                </UniformGrid>
+            </StackPanel>
+        </materialDesign:Card>
+
+        <materialDesign:Card Grid.Row="1" Grid.Column="1" Style="{StaticResource KpiCardStyle}">
+            <StackPanel>
+                <TextBlock Text="실시간 시스템 로그" FontSize="18" FontWeight="Medium" Margin="0,0,0,15"/>
+
+                <ListView ItemsSource="{Binding ActiveAlarms}" MaxHeight="600">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="0,5">
+
+                                <materialDesign:PackIcon Width="25" Height="25" VerticalAlignment="Center" Margin="0,0,10,0">
+                                    <materialDesign:PackIcon.Style>
+                                        <Style TargetType="materialDesign:PackIcon">
+                                            <Setter Property="Kind" Value="CheckCircle"/>
+                                            <Setter Property="Foreground" Value="LimeGreen"/>
+
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Level}" Value="Error">
+                                                    <Setter Property="Kind" Value="AlertCircle"/>
+                                                    <Setter Property="Foreground" Value="Red"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Level}" Value="Warning">
+                                                    <Setter Property="Kind" Value="Alert"/>
+                                                    <Setter Property="Foreground" Value="Orange"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </materialDesign:PackIcon.Style>
+                                </materialDesign:PackIcon>
+
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding DeviceName}" FontWeight="Bold" Margin="0,0,5,0"/>
+                                        <TextBlock Text="{Binding Level}" FontSize="10" VerticalAlignment="Center" Opacity="0.7"/>
+                                    </StackPanel>
+
+                                    <TextBlock Text="{Binding Message}" Foreground="Gray" TextWrapping="Wrap" MaxWidth="250"/>
+                                    <TextBlock Text="{Binding Timestamp, StringFormat='HH:mm:ss'}" FontSize="10" Foreground="LightGray"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </StackPanel>
+        </materialDesign:Card>
+    </Grid>
+</UserControl>

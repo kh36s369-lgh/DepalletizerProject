@@ -1,0 +1,9 @@
+{
+  "ServerUrl": "http://127.0.0.1:5000",
+  "AgvIpAddress": "192.168.1.106",
+  "ArduinoPort": "COM3",
+  "OnnxModelPath": "best9.onnx",
+  "TopCameraIndex": 0,
+  "SideCamera1Index": 1,
+  "SideCamera2Index": 2
+}

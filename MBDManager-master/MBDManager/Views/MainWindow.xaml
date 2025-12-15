@@ -1,0 +1,115 @@
+﻿<Window x:Class="MBDManager.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:MBDManager.Views"
+        xmlns:vm="clr-namespace:MBDManager.ViewModels"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        mc:Ignorable="d"
+        Title="MBDManager Dashboard" Height="1080" Width="1920"
+        WindowState="Maximized"
+        WindowStartupLocation="CenterScreen"
+        TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+        Background="{DynamicResource MaterialDesignPaper}"
+        FontFamily="{materialDesign:MaterialDesignFont}">
+
+    <Window.DataContext>
+        <vm:MainWindowViewModel/>
+    </Window.DataContext>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Grid.Column="0" Background="#FF1E1E1E" Width="220">
+
+            <TextBlock Text="MBDManager" FontSize="20" FontWeight="Bold" 
+                       Foreground="White" HorizontalAlignment="Center" Margin="10,20"/>
+
+            <TextBlock Text="{Binding CurrentDateTime, StringFormat='yyyy-MM-dd (ddd)'}"
+                       Foreground="#B0FFFFFF" FontSize="14"
+                       HorizontalAlignment="Center" Margin="0,0,0,5"/>
+            <TextBlock Text="{Binding CurrentDateTime, StringFormat='HH:mm:ss'}"
+                       Foreground="White" FontSize="22" FontWeight="Medium"
+                       HorizontalAlignment="Center" Margin="0,0,0,15"/>
+
+            <Separator Background="#444" Margin="10,0,10,10"/>
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <Button Style="{StaticResource MaterialDesignFlatButton}" Foreground="White"
+                            HorizontalContentAlignment="Left" Padding="20,10"
+                            Command="{Binding NavigateCommand}" CommandParameter="Dashboard">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="ViewDashboard" Margin="0,0,15,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="대시보드" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource MaterialDesignFlatButton}" Foreground="White"
+                            HorizontalContentAlignment="Left" Padding="20,10"
+                            Command="{Binding NavigateCommand}" CommandParameter="LiveMonitoring">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="Camera" Margin="0,0,15,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="실시간 모니터링" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource MaterialDesignFlatButton}" Foreground="White"
+                            HorizontalContentAlignment="Left" Padding="20,10"
+                            Command="{Binding NavigateCommand}" CommandParameter="History">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="History" Margin="0,0,15,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="검수 기록" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource MaterialDesignFlatButton}" Foreground="White"
+                            HorizontalContentAlignment="Left" Padding="20,10"
+                            Command="{Binding NavigateCommand}" CommandParameter="DeliveryStatus">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="TruckDelivery" Margin="0,0,15,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="배송 상태 관리" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource MaterialDesignFlatButton}" Foreground="White"
+                            HorizontalContentAlignment="Left" Padding="20,10"
+                            Command="{Binding NavigateCommand}" CommandParameter="PaletteAgv">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="RobotIndustrial" Margin="0,0,15,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="팔레트 &amp; AGV" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource MaterialDesignFlatButton}" Foreground="White"
+                            HorizontalContentAlignment="Left" Padding="20,10"
+                            Command="{Binding NavigateCommand}" CommandParameter="Log">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="AlertCircleOutline" Margin="0,0,15,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="오류 로그" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource MaterialDesignFlatButton}" Foreground="White"
+                            HorizontalContentAlignment="Left" Padding="20,10"
+                            Command="{Binding NavigateCommand}" CommandParameter="Settings">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="Settings" Margin="0,0,15,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="시스템 설정" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </ScrollViewer>
+
+        </StackPanel>
+
+        <ContentControl Grid.Column="1"
+                        Content="{Binding CurrentView}" 
+                        Margin="10"
+                        ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+    </Grid>
+</Window>

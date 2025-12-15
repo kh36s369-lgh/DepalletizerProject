@@ -1,0 +1,86 @@
+﻿<UserControl x:Class="MBDManager.Views.LogView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:MBDManager.Views"
+             xmlns:vm="clr-namespace:MBDManager.ViewModels"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             mc:Ignorable="d" 
+             d:DataContext="{d:DesignInstance vm:LogViewModel, IsDesignTimeCreatable=True}"
+             d:DesignHeight="900" d:DesignWidth="1700">
+
+    <materialDesign:Card Margin="10" Padding="10" UniformCornerRadius="8">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="5,5,5,15">
+
+                <DatePicker materialDesign:HintAssist.Hint="날짜 선택" Width="150" Margin="0,0,10,0"
+                            SelectedDate="{Binding SearchDate}"/>
+
+                <ComboBox materialDesign:HintAssist.Hint="로그 레벨" Width="120" Margin="0,0,10,0"
+                          Text="{Binding SelectedLevel}" IsEditable="False" SelectedIndex="0">
+                    <ComboBoxItem Content="전체"/>
+                    <ComboBoxItem Content="Error"/>
+                    <ComboBoxItem Content="Warning"/>
+                    <ComboBoxItem Content="Info"/>
+                </ComboBox>
+
+                <ComboBox materialDesign:HintAssist.Hint="장치 종류" Width="150" Margin="0,0,10,0"
+                          Text="{Binding SelectedDevice}" IsEditable="False" SelectedIndex="0">
+                    <ComboBoxItem Content="전체"/>
+                    <ComboBoxItem Content="Camera"/>
+                    <ComboBoxItem Content="AGV"/>
+                    <ComboBoxItem Content="Server"/>
+                    <ComboBoxItem Content="System"/>
+                    <ComboBoxItem Content="ONNX"/>
+                </ComboBox>
+
+                <Button Content="조회" Style="{StaticResource MaterialDesignRaisedButton}"
+                        Command="{Binding SearchCommand}"/>
+            </StackPanel>
+
+            <DataGrid Grid.Row="1" ItemsSource="{Binding LogEntries}"
+                      AutoGenerateColumns="False" IsReadOnly="True"
+                      CanUserAddRows="False" SelectionMode="Single"
+                      TextElement.Foreground="White">
+
+                <DataGrid.RowStyle>
+                    <Style TargetType="DataGridRow" BasedOn="{StaticResource MaterialDesignDataGridRow}">
+
+                        <Setter Property="Foreground" Value="White"/>
+
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Level}" Value="Error">
+                                <Setter Property="Background" Value="#44FF0000"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </DataTrigger>
+
+                            <DataTrigger Binding="{Binding Level}" Value="Warning">
+                                <Setter Property="Background" Value="#44FFD700"/>
+                                <Setter Property="Foreground" Value="Black"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </DataGrid.RowStyle>
+
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="시간" Binding="{Binding Timestamp, StringFormat='yyyy-MM-dd HH:mm:ss'}" Width="160"/>
+                    <DataGridTextColumn Header="레벨" Binding="{Binding Level}" Width="100"/>
+                    <DataGridTextColumn Header="장치" Binding="{Binding Device}" Width="100"/>
+                    <DataGridTemplateColumn Header="알람 내용" Width="*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Message}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Grid>
+    </materialDesign:Card>
+</UserControl>

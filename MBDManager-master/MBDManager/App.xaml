@@ -1,0 +1,100 @@
+﻿<Application x:Class="MBDManager.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:MBDManager"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:vm="clr-namespace:MBDManager.ViewModels"
+             xmlns:views="clr-namespace:MBDManager.Views"
+             StartupUri="Views/LoginWindow.xaml">
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+
+                <!-- =============================== -->
+                <!--   MaterialDesign 4.x 설정       -->
+                <!-- =============================== -->
+                <materialDesign:BundledTheme BaseTheme="Dark"
+                                             PrimaryColor="LightBlue"
+                                             SecondaryColor="Lime" />
+
+                <!-- Material Design 2 스타일 -->
+                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesign2.Defaults.xaml" />
+
+            </ResourceDictionary.MergedDictionaries>
+            <SolidColorBrush x:Key="MaterialDesignPaper" Color="#1F1F1F"/>
+            <SolidColorBrush x:Key="MaterialDesignCardBackground" Color="#2B2B2B"/>
+            <SolidColorBrush x:Key="MaterialDesignBody" Color="#E0E0E0"/>
+            <SolidColorBrush x:Key="MaterialDesignBodyLight" Color="#FFFFFF"/>
+
+
+
+            <!-- =============================== -->
+            <!--         공용 Converter          -->
+            <!-- =============================== -->
+            <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+            <local:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
+
+            <Style x:Key="StatusLightStyle" TargetType="Ellipse">
+                <Setter Property="Width" Value="20"/>
+                <Setter Property="Height" Value="20"/>
+                <Setter Property="Stroke" Value="Gray"/>
+                <Setter Property="StrokeThickness" Value="1"/>
+                <Setter Property="Fill" Value="LightGray"/>
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding}" Value="Normal">
+                        <Setter Property="Fill" Value="Green"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding}" Value="Warning">
+                        <Setter Property="Fill" Value="Orange"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding}" Value="Error">
+                        <Setter Property="Fill" Value="Red"/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+
+
+
+            <!-- =============================== -->
+            <!--       ViewModel → View 매핑      -->
+            <!-- =============================== -->
+
+            <!-- 대시보드 -->
+            <DataTemplate DataType="{x:Type vm:DashboardViewModel}">
+                <views:DashboardView />
+            </DataTemplate>
+
+            <!-- 실시간 모니터링 -->
+            <DataTemplate DataType="{x:Type vm:LiveMonitoringViewModel}">
+                <views:LiveMonitoringView />
+            </DataTemplate>
+
+            <!-- 검수 기록 -->
+            <DataTemplate DataType="{x:Type vm:HistoryViewModel}">
+                <views:HistoryView />
+            </DataTemplate>
+
+            <!-- 배송 상태 관리 -->
+            <DataTemplate DataType="{x:Type vm:DeliveryStatusViewModel}">
+                <views:DeliveryStatusView />
+            </DataTemplate>
+
+            <!-- 팔레트 & AGV -->
+            <DataTemplate DataType="{x:Type vm:PaletteAgvViewModel}">
+                <views:PaletteAgvView />
+            </DataTemplate>
+
+            <!-- 오류 로그 -->
+            <DataTemplate DataType="{x:Type vm:LogViewModel}">
+                <views:LogView />
+            </DataTemplate>
+
+            <!-- 설정 -->
+            <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+                <views:SettingsView />
+            </DataTemplate>
+
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

@@ -1,0 +1,165 @@
+﻿<UserControl x:Class="MBDManager.Views.DeliveryStatusView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.expression.blend/2008" 
+             xmlns:local="clr-namespace:MBDManager.Views"
+             xmlns:vm="clr-namespace:MBDManager.ViewModels"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             mc:Ignorable="d" 
+             d:DataContext="{d:DesignInstance vm:DeliveryStatusViewModel, IsDesignTimeCreatable=True}"
+             d:DesignHeight="900" d:DesignWidth="1700">
+
+    <UserControl.Resources>
+        <Style x:Key="StepperStepStyle" TargetType="Border">
+            <Setter Property="Width" Value="180"/>
+            <Setter Property="Height" Value="80"/>
+            <Setter Property="CornerRadius" Value="5"/>
+            <Setter Property="Background" Value="LightGray"/>
+            <Setter Property="BorderBrush" Value="Gray"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsCompleted}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource PrimaryHueMidBrush}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryHueMidBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style TargetType="TextBlock" x:Key="StepperTextStyle">
+            <Setter Property="Foreground" Value="Black"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=Border}, Path=DataContext.IsCompleted}" Value="True">
+                    <Setter Property="Foreground" Value="White"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <materialDesign:Card Grid.Row="0" Margin="10" Padding="20" UniformCornerRadius="8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Calendar Margin="0,0,20,0" SelectedDate="{Binding SelectedDate}"/>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBox Style="{StaticResource MaterialDesignFloatingHintTextBox}"
+                             materialDesign:HintAssist.Hint="송장번호 또는 QR코드로 검색" Width="400"
+                             Text="{Binding SearchTrackingNumber}"/>
+                    <Button Content="통합 검색" Style="{StaticResource MaterialDesignRaisedButton}"
+                            Width="150" Margin="0,20,0,0"
+                            Command="{Binding SearchByTrackingNumberCommand}"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="20,0,0,0">
+                    <TextBlock Text="금일 접수/처리 건수" FontSize="16" Foreground="Gray"/>
+                    <TextBlock Text="{Binding SelectedDateTotalCount}" FontSize="48" FontWeight="Bold"/>
+                </StackPanel>
+            </Grid>
+        </materialDesign:Card>
+
+        <Grid Grid.Row="1" Margin="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*"/>
+                <ColumnDefinition Width="1*"/>
+            </Grid.ColumnDefinitions>
+
+            <materialDesign:Card Grid.Column="0" Padding="10" UniformCornerRadius="8">
+                <DataGrid ItemsSource="{Binding DailyPackages}"
+                          SelectedItem="{Binding SelectedPackage}"
+                          AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="접수 시간" Binding="{Binding Timestamp}" Width="90"/>
+                        <DataGridTextColumn Header="운송장번호(QR)" Binding="{Binding TrackingNumber}" Width="130"/>
+                        <DataGridTextColumn Header="상품명" Binding="{Binding ItemName}" Width="100"/>
+                        <DataGridTextColumn Header="보내는 분" Binding="{Binding SenderName}" Width="90"/>
+                        <DataGridTextColumn Header="받는 분" Binding="{Binding ReceiverName}" Width="90"/>
+                        <DataGridTextColumn Header="받는 주소" Binding="{Binding ReceiverAddress}" Width="200"/>
+                        <DataGridTextColumn Header="현재 상태" Binding="{Binding CurrentStatus}" Width="100"/>
+                        <DataGridTextColumn Header="지역" Binding="{Binding Zone}" Width="60"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </materialDesign:Card>
+
+            <materialDesign:Card Grid.Column="1" Margin="10,0,0,0" Padding="20" UniformCornerRadius="8" MinWidth="300">
+
+                <StackPanel Visibility="{Binding SelectedPackage, Converter={StaticResource NullToVisibilityConverter}}">
+
+                    <TextBlock Text="상세 배송 조회" FontSize="20" FontWeight="Bold" Margin="0,0,0,15" Foreground="{DynamicResource PrimaryHueMidBrush}"/>
+
+                    <Grid Margin="0,0,0,20">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="송장번호:" Foreground="Gray" Margin="0,0,10,10"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SelectedPackage.TrackingNumber}" FontWeight="Bold" FontSize="16"/>
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="상품명:" Foreground="Gray" Margin="0,0,10,10"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedPackage.ItemName}" FontWeight="Bold"/>
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="보내는 분:" Foreground="Gray" Margin="0,0,10,10"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedPackage.SenderName}"/>
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="받는 분:" Foreground="Gray" Margin="0,0,10,10"/>
+                        <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
+                            <TextBlock Text="{Binding SelectedPackage.ReceiverName}" FontWeight="Bold" Margin="0,0,10,0"/>
+                            <TextBlock Text="{Binding SelectedPackage.ReceiverAddress}" TextWrapping="Wrap" FontSize="11" VerticalAlignment="Center" Opacity="0.7"/>
+                        </StackPanel>
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="최종 분류:" Foreground="Gray" Margin="0,0,10,10"/>
+                        <Border Grid.Row="4" Grid.Column="1" Background="Orange" CornerRadius="3" Padding="5,0" HorizontalAlignment="Left">
+                            <TextBlock Text="{Binding SelectedPackage.Zone}" FontWeight="Bold" Foreground="White"/>
+                        </Border>
+                    </Grid>
+
+                    <Separator Margin="0,10"/>
+                    <TextBlock Text="배송 진행 단계" FontSize="16" FontWeight="Medium" Margin="0,10,0,10"/>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="400">
+                        <ItemsControl ItemsSource="{Binding SelectedPackage.StatusSteps}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Vertical"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <Border Style="{StaticResource StepperStepStyle}">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding StepName}" FontSize="14" FontWeight="Bold" Style="{StaticResource StepperTextStyle}"/>
+                                                <TextBlock Text="{Binding Timestamp, StringFormat='MM-dd HH:mm'}" FontSize="12" Style="{StaticResource StepperTextStyle}"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <materialDesign:PackIcon Kind="ArrowDown" HorizontalAlignment="Center" Margin="0,5"
+                                                                 Foreground="Gray" Width="20" Height="20"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                </StackPanel>
+            </materialDesign:Card>
+        </Grid>
+    </Grid>
+</UserControl>

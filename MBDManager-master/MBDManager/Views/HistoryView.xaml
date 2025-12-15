@@ -1,0 +1,125 @@
+﻿<UserControl x:Class="MBDManager.Views.HistoryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.expression.blend/2008" 
+             xmlns:local="clr-namespace:MBDManager.Views"
+             xmlns:vm="clr-namespace:MBDManager.ViewModels"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             mc:Ignorable="d" 
+             d:DataContext="{d:DesignInstance vm:HistoryViewModel, IsDesignTimeCreatable=True}"
+             d:DesignHeight="900" d:DesignWidth="1700">
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="2*"/>
+            <ColumnDefinition Width="1*"/>
+        </Grid.ColumnDefinitions>
+
+        <materialDesign:Card Grid.Column="0" Margin="10" Padding="10" UniformCornerRadius="8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="5,5,5,15">
+                    <DatePicker materialDesign:HintAssist.Hint="날짜 선택" Width="150" Margin="0,0,10,0"
+                                SelectedDate="{Binding SearchDate}"/>
+
+                    <TextBox Style="{StaticResource MaterialDesignFloatingHintTextBox}"
+                             materialDesign:HintAssist.Hint="송장번호 검색" Width="200" Margin="0,0,10,0"
+                             Text="{Binding SearchQrCode}"/>
+
+                    <ComboBox materialDesign:HintAssist.Hint="불량 여부" Width="100" Margin="0,0,10,0"
+                              Text="{Binding SearchStatus}" IsEditable="False">
+                        <ComboBoxItem Content="전체" IsSelected="True"/>
+                        <ComboBoxItem Content="정상"/>
+                        <ComboBoxItem Content="불량"/>
+                    </ComboBox>
+
+                    <Button Content="조회" Style="{StaticResource MaterialDesignRaisedButton}"
+                            Command="{Binding SearchCommand}"/>
+                </StackPanel>
+
+                <DataGrid Grid.Row="1" ItemsSource="{Binding InspectionHistory}"
+                          SelectedItem="{Binding SelectedHistoryItem}"
+                          AutoGenerateColumns="False" IsReadOnly="True"
+                          CanUserAddRows="False" SelectionMode="Single">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="시간" Binding="{Binding Timestamp}" Width="160"/>
+                        <DataGridTextColumn Header="QR 송장번호" Binding="{Binding QrCode}" Width="*"/>
+                        <DataGridTextColumn Header="판정 결과" Binding="{Binding DisplayResult}" Width="100"/>
+                        <DataGridTextColumn Header="분류 구역" Binding="{Binding Zone}" Width="100"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </materialDesign:Card>
+
+        <materialDesign:Card Grid.Column="1" Margin="10" Padding="20" UniformCornerRadius="8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="3채널 정밀 검수 결과" FontSize="20" FontWeight="Bold" Margin="0,0,0,10"/>
+
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="좌측 목록에서 항목을 선택하세요." 
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="Gray" Margin="0,100,0,0"
+                                   Visibility="{Binding SelectedHistoryItem, Converter={StaticResource NullToVisibilityConverter}, ConverterParameter=invert}"/>
+
+                        <StackPanel Visibility="{Binding SelectedHistoryItem, Converter={StaticResource NullToVisibilityConverter}}">
+
+                            <Border Background="Black" CornerRadius="5" Margin="0,5">
+                                <Grid>
+                                    <Image Source="{Binding SelectedHistoryItem.ImagePath}" Stretch="Uniform" Height="250"/>
+                                    <TextBlock Text="Top Camera (Main)" Foreground="Lime" Margin="10" FontWeight="Bold" 
+                                               VerticalAlignment="Top" HorizontalAlignment="Left" 
+                                               Effect="{StaticResource MaterialDesignShadowDepth1}"/>
+                                </Grid>
+                            </Border>
+
+                            <Border Background="Black" CornerRadius="5" Margin="0,5">
+                                <Grid>
+                                    <Image Source="{Binding SelectedHistoryItem.ImagePath1}" Stretch="Uniform" Height="250"/>
+                                    <TextBlock Text="Side Camera 1" Foreground="White" Margin="10" FontWeight="Bold" 
+                                               VerticalAlignment="Top" HorizontalAlignment="Left" 
+                                               Effect="{StaticResource MaterialDesignShadowDepth1}"/>
+                                </Grid>
+                            </Border>
+
+                            <Border Background="Black" CornerRadius="5" Margin="0,5">
+                                <Grid>
+                                    <Image Source="{Binding SelectedHistoryItem.ImagePath2}" Stretch="Uniform" Height="250"/>
+                                    <TextBlock Text="Side Camera 2" Foreground="White" Margin="10" FontWeight="Bold" 
+                                               VerticalAlignment="Top" HorizontalAlignment="Left" 
+                                               Effect="{StaticResource MaterialDesignShadowDepth1}"/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <StackPanel Grid.Row="2" Margin="0,20,0,0" 
+                            Visibility="{Binding SelectedHistoryItem, Converter={StaticResource NullToVisibilityConverter}}">
+
+                    <TextBlock Text="상세 분석 내용" FontSize="16" FontWeight="Bold" Margin="0,0,0,5"/>
+                    <TextBlock Text="{Binding SelectedHistoryItem.Details}" FontSize="14" Foreground="Gray" TextWrapping="Wrap"/>
+
+                    <Separator Margin="0,10"/>
+
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="최종 판정: " FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding SelectedHistoryItem.DisplayResult}" FontSize="24" FontWeight="Bold" 
+                                   Foreground="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </materialDesign:Card>
+    </Grid>
+</UserControl>

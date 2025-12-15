@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.env
+venv/
+
+# Arduino
+*.hex
+*.elf
+
+# Visual Studio / C++
+.vs/
+x64/
+Debug/
+Release/
+*.user
+*.suo
+
+# OS
+.DS_Store
+Thumbs.db
