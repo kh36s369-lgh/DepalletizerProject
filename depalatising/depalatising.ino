@@ -1,520 +1,432 @@
+#include <HX711.h> 
 #include <Wire.h>
-#include <Adafruit_PWMServoDriver.h>
-#include <WiFi.h>
-#include <WebServer.h>
-#include <ESP32Servo.h>
+#include <LiquidCrystal_I2C.h>
+#include <Servo.h>
+#include <math.h>   // fabs 사용
 
-#include "soc/soc.h"
-#include "soc/rtc_cntl_reg.h"
+// ======================= HX711 & LCD 설정 =======================
 
-// ===================== 집 공유기 설정 =====================
-const char* ssid = "tplink1002";       
-const char* password = "dptnsl12";     
+const int DOUT_PIN = 8;   // HX711 DT
+const int SCK_PIN  = 9;   // HX711 SCK
 
-IPAddress local_IP(192, 168, 1, 106);
-IPAddress gateway(192, 168, 1, 1);     
-IPAddress subnet(255, 255, 255, 0);
-IPAddress primaryDNS(8, 8, 8, 8);      
-// =======================================================
+HX711 scale;
+float calibration_factor = -1998.0;
 
-WebServer server(80);
-Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
-Servo forkliftServo;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-#define ENA_CHANNEL 0 
-#define ENB_CHANNEL 3 
+int weightState = 1;   // 1: 대기, 2: 측정+통신대기+이동, 3: 제거 대기
 
-#define IN1 13
-#define IN2 26 
-#define IN3 14
-#define IN4 27
+const float ZERO_THRESHOLD      = 2.0;  // 이 값 미만이면 "없다"
+const float WEIGHING_THRESHOLD  = 3.0;  // 이 값 이상이면 "물체 있다"
 
-#define TRIG_PIN_L 5
-#define ECHO_PIN_L 18
-#define TRIG_PIN_R 19
-#define ECHO_PIN_R 23
+// ======================= 적재 수량 관리 (추가됨) =======================
+// 각 구역별 현재 적재된 수량 (0 ~ 4)
+// 인덱스: 0=A, 1=B, 2=C, 3=D
+int zoneCounts[4] = {0, 0, 0, 0};
 
-#define FORKLIFT_PIN 4 
-#define FORKLIFT_UP_ANGLE   70    
-#define FORKLIFT_DOWN_ANGLE 10    
+// ======================= 서보 핀 =======================
 
-#define ANGLE_STEP 53       
-#define LIFT_OFFSET 10      
-#define ANGLE_TRANSPORT 63  
-#define ANGLE_FLOOR 15      
+Servo sBase, sShoulder, sElbow, sWristP, sWristR, sGrip;
 
-int currentForkliftAngle = FORKLIFT_DOWN_ANGLE; 
+#define BASE_PIN      2
+#define SHOULDER_PIN  3
+#define ELBOW_PIN     4
+#define WRIST_P_PIN   5
+#define WRIST_R_PIN   6
+#define GRIP_PIN      7
 
-#define PIN_S1 34 
-#define PIN_S2 35 
-#define PIN_S3 32 
-#define PIN_S5 33 
+// ======================= Grip 설정 =======================
 
-// ==================== [속도 상향 조정] ====================
-// 짐을 실었을 때를 대비해 전체적으로 힘을 키웠습니다.
-const int SPEED_FWD  = 3800;      // (기존 3300 -> 3800) 직진 힘 강화
-const int SPEED_LINE_MAX = 3500;  // (기존 3200 -> 3500) 라인트레이싱 주행 힘 강화
-const int SPEED_TURN_SOFT = 4000; // (기존 3600 -> 4000) 커브 돌 때 힘 부족 해결!
+const int GRIP_OPEN = 25;
+const int GRIP_HOLD = 45;
 
-const int SPEED_PIVOT_HARD = 4095; // 최대 속도 유지
-const int SPEED_SCAN = 3000;       // (기존 2800 -> 3000) 탐색도 조금 더 힘차게
-// ====================================================
+bool gripAttached = false;
 
-const float STOP_DISTANCE = 8.5; 
 
-const int BLACK = 0;
-const int WHITE = 1;
 
-int operatingMode = 0;
-int lastLineDirection = 0; 
+// ======================= Pose 구조체 =======================
 
-int targetZone = 0;   
-int lineCount = 0;    
-int jobPhase = 0;     
-const int WAREHOUSE_LINE = 4; 
+struct Pose {
+  int b, s, e, wp, wr, g;
+};
 
-unsigned long t_s1 = 0; 
-unsigned long t_s5 = 0;
+// ======================= 기본 자세 / 픽업 자세 =======================
 
-unsigned long lastStationTime = 0;
+const Pose HOME      = {7, 140, 115, 105, 88, GRIP_OPEN};
 
-void stopMotors();
-void goForward(int speed);
-void goBack(int speed);
-void turnLeft(int speed);
-void turnRight(int speed);
-void setForklift(int targetAngle); 
-void runLineFollower();
-void sendHTMLPage();
-void rotateLeftUntilLine();  
-void rotateRightUntilLine(); 
-void turnAround();          
-void goForwardUntilLine();  
-void goForwardUntilLineEnd();
-float getDistance(int trigPin, int echoPin); 
-void goForwardUntilPallet(); 
-bool checkStop();
-void smartDelay(unsigned long ms);
+const Pose PICK_ABOVE     = {7, 140, 115, 105, 88, GRIP_OPEN};
+const Pose PICK_DOWN      = {7, 145, 140, 130, 92, GRIP_OPEN};
+const Pose LIFT_FROM_PICK = {7, 140, 115, 105, 88, GRIP_HOLD};
+const Pose CARRY_MID      = {7, 130, 100, 105, 88, GRIP_HOLD};
 
-bool checkStop() {
-  server.handleClient(); 
-  if (operatingMode == 0) { 
-    stopMotors(); 
-    return true;  
-  }
-  return false;
+// ======================= 팔레트 슬롯 Pose =======================
+// A 구역
+const Pose A_ABOVE[4] = {
+  {70, 130, 95, 105, 88, GRIP_HOLD}, {70, 130, 95, 105, 88, GRIP_HOLD},
+  {70, 130, 95, 105, 88, GRIP_HOLD}, {70, 130, 95, 105, 88, GRIP_HOLD}
+};
+const Pose A_TOUCH[4] = {
+  {80, 150, 160, 140, 88, GRIP_HOLD}, {60, 150, 160, 130, 88, GRIP_HOLD},
+  {68, 130, 160,  95, 88, GRIP_HOLD}, {85, 140, 145, 135, 88, GRIP_HOLD}
+};
+const Pose A_LIFT[4] = {
+  {70, 135, 100, 100, 88, GRIP_OPEN}, {70, 135, 100, 100, 88, GRIP_OPEN},
+  {70, 135, 100, 100, 88, GRIP_OPEN}, {70, 135, 100, 100, 88, GRIP_OPEN}
+};
+
+// B 구역
+const Pose B_ABOVE[4] = {
+  {110, 130, 95, 105, 88, GRIP_HOLD}, {110, 130, 95, 105, 88, GRIP_HOLD},
+  {110, 130, 95, 105, 88, GRIP_HOLD}, {110, 130, 95, 105, 88, GRIP_HOLD}
+};
+const Pose B_TOUCH[4] = {
+  {135, 145, 160, 145, 88, GRIP_HOLD}, {115, 145, 160, 150, 88, GRIP_HOLD},
+  {115, 140, 165, 130, 88, GRIP_HOLD}, {125, 145, 160, 125, 88, GRIP_HOLD}
+};
+const Pose B_LIFT[4] = {
+  {110, 135, 100, 100, 88, GRIP_OPEN}, {110, 135, 100, 100, 88, GRIP_OPEN},
+  {110, 135, 100, 100, 88, GRIP_OPEN}, {110, 135, 100, 100, 88, GRIP_OPEN}
+};
+
+// C 구역
+const Pose C_ABOVE[4] = {
+  {150, 130, 95, 105, 88, GRIP_HOLD}, {150, 130, 95, 105, 88, GRIP_HOLD},
+  {150, 130, 95, 105, 88, GRIP_HOLD}, {150, 130, 95, 105, 88, GRIP_HOLD}
+};
+const Pose C_TOUCH[4] = {
+  {158, 130, 138, 120, 88, GRIP_HOLD}, {150, 150, 160, 130, 88, GRIP_HOLD},
+  {145, 140, 160, 100, 88, GRIP_HOLD}, {148, 140, 160,  90, 88, GRIP_HOLD}
+};
+const Pose C_LIFT[4] = {
+  {150, 135, 100, 100, 88, GRIP_OPEN}, {150, 135, 100, 100, 88, GRIP_OPEN},
+  {150, 135, 100, 100, 88, GRIP_OPEN}, {150, 135, 100, 100, 88, GRIP_OPEN}
+};
+
+// D 구역
+const Pose D_ABOVE[4] = {
+  {180, 130, 95, 105, 88, GRIP_HOLD}, {180, 130, 95, 105, 88, GRIP_HOLD},
+  {180, 130, 95, 105, 88, GRIP_HOLD}, {180, 130, 95, 105, 88, GRIP_HOLD}
+};
+const Pose D_TOUCH[4] = {
+  {180, 158, 138, 130, 88, GRIP_HOLD}, {180, 158, 138, 130, 88, GRIP_HOLD},
+  {180, 158, 138, 130, 88, GRIP_HOLD}, {180, 158, 138, 130, 88, GRIP_HOLD}
+};
+const Pose D_LIFT[4] = {
+  {180, 135, 100, 100, 88, GRIP_OPEN}, {180, 135, 100, 100, 88, GRIP_OPEN},
+  {180, 135, 100, 100, 88, GRIP_OPEN}, {180, 135, 100, 100, 88, GRIP_OPEN}
+};
+
+// ======================= 각도 제한 =======================
+
+const int MIN_A[6] = {0, 40, 40, 70, 80, 30};
+const int MAX_A[6] = {180, 170, 160, 160, 120, 120};
+
+bool isPaused = false;
+
+// ======================= 유틸 =======================
+
+int clampAngle(int v, int lo, int hi) {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
 }
 
-void smartDelay(unsigned long ms) {
-  unsigned long start = millis();
-  while (millis() - start < ms) {
-    if (checkStop()) break; 
+void attachGripIfNeeded() {
+  if (!gripAttached) {
+    sGrip.attach(GRIP_PIN);
+    sGrip.write(GRIP_OPEN);
+    gripAttached = true;
+    delay(200);
   }
 }
 
-void setup() {
-  pinMode(FORKLIFT_PIN, OUTPUT);
-  digitalWrite(FORKLIFT_PIN, LOW);
-
-  pinMode(TRIG_PIN_L, OUTPUT); pinMode(ECHO_PIN_L, INPUT);
-  pinMode(TRIG_PIN_R, OUTPUT); pinMode(ECHO_PIN_R, INPUT);
-
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
-
-  Serial.begin(115200);
-  Wire.begin(21, 22);
-  
-  pwm.begin();
-  pwm.setPWMFreq(330); 
-  
-  int initialPulse = map(ANGLE_FLOOR, 0, 180, 500, 2400);
-  forkliftServo.writeMicroseconds(initialPulse);
-  forkliftServo.attach(FORKLIFT_PIN, 500, 2400);
-  currentForkliftAngle = ANGLE_FLOOR;
-
-  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT); 
-  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
-  pinMode(PIN_S1, INPUT); pinMode(PIN_S2, INPUT);
-  pinMode(PIN_S3, INPUT); pinMode(PIN_S5, INPUT);
-
-  analogReadResolution(10);
-  stopMotors();
-
-  Serial.println("WiFi Connecting...");
-  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS)) {
-    Serial.println("STA Failed to configure");
+void detachGrip() {
+  if (gripAttached) {
+    sGrip.detach();
+    gripAttached = false;
   }
-  WiFi.setSleep(false); 
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
-  Serial.println("\nWiFi Connected!");
-  Serial.print("AGV IP Address: ");
-  Serial.println(WiFi.localIP()); 
-
-  server.on("/", []() { sendHTMLPage(); });
-  server.on("/taskA", []() { operatingMode = 5; targetZone = 1; jobPhase = 1; lineCount = 0; lastStationTime = 0; Serial.println("CMD: Task A"); server.send(200, "text/plain", "OK"); });
-  server.on("/taskB", []() { operatingMode = 5; targetZone = 2; jobPhase = 1; lineCount = 0; lastStationTime = 0; Serial.println("CMD: Task B"); server.send(200, "text/plain", "OK"); });
-  server.on("/taskC", []() { operatingMode = 5; targetZone = 3; jobPhase = 1; lineCount = 0; lastStationTime = 0; Serial.println("CMD: Task C"); server.send(200, "text/plain", "OK"); });
-  server.on("/forward",   []() { operatingMode = 1; server.send(200, "text/plain", "OK"); });
-  server.on("/backward",  []() { operatingMode = 2; server.send(200, "text/plain", "OK"); });
-  server.on("/left",      []() { operatingMode = 3; server.send(200, "text/plain", "OK"); });
-  server.on("/right",     []() { operatingMode = 4; server.send(200, "text/plain", "OK"); });
-  server.on("/stop",      []() { operatingMode = 0; server.send(200, "text/plain", "OK"); });
-  
-  server.on("/liftup", []() { 
-      int prev = operatingMode;
-      if(prev == 0) operatingMode = 99; 
-      setForklift(ANGLE_TRANSPORT); 
-      operatingMode = prev; 
-      server.send(200, "text/plain", "OK"); 
-  }); 
-  server.on("/liftstep", []() { 
-      int prev = operatingMode;
-      if(prev == 0) operatingMode = 99;
-      setForklift(ANGLE_STEP); 
-      operatingMode = prev;
-      server.send(200, "text/plain", "OK"); 
-  });      
-  server.on("/liftdown", []() { 
-      int prev = operatingMode;
-      if(prev == 0) operatingMode = 99;
-      setForklift(ANGLE_FLOOR); 
-      operatingMode = prev;
-      server.send(200, "text/plain", "OK"); 
-  });     
-
-  server.begin();
 }
 
-void loop() {
-  if (checkStop()) return;
+void writePose(const Pose& p) {
+  sBase.write(    clampAngle(p.b,  MIN_A[0], MAX_A[0]) );
+  sShoulder.write(clampAngle(p.s,  MIN_A[1], MAX_A[1]) );
+  sElbow.write(   clampAngle(p.e,  MIN_A[2], MAX_A[2]) );
+  sWristP.write(  clampAngle(p.wp, MIN_A[3], MAX_A[3]) );
+  sWristR.write(  clampAngle(p.wr, MIN_A[4], MAX_A[4]) );
 
-  if (operatingMode == 5) runLineFollower();
-  else {
-    switch (operatingMode) {
-      case 0: stopMotors(); break;
-      case 1: goForward(SPEED_FWD); break;
-      case 2: goBack(SPEED_FWD); break;
-      case 3: turnLeft(SPEED_TURN_SOFT); break;
-      case 4: turnRight(SPEED_TURN_SOFT); break;
+  if (gripAttached) {
+    sGrip.write(  clampAngle(p.g,  MIN_A[5], MAX_A[5]) );
+  }
+}
+
+Pose readPose() {
+  Pose p = {
+    sBase.read(), sShoulder.read(), sElbow.read(),
+    sWristP.read(), sWristR.read(),
+    gripAttached ? sGrip.read() : GRIP_OPEN
+  };
+  return p;
+}
+
+void checkSerial() {
+  while (Serial.available() > 0) {
+    char c = Serial.read();
+    if (c == 'q' || c == 'Q') {
+      isPaused = true;
+      Serial.println("STOPPED.");
+    }
+    else if (c == 'r' || c == 'R') {
+      isPaused = false;
+      Serial.println("RESUMED.");
     }
   }
 }
 
-float getDistance(int trigPin, int echoPin) {
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-  long duration = pulseIn(echoPin, HIGH, 30000); 
-  if (duration == 0) return 100.0; 
-  return duration * 0.034 / 2;
-}
-
-void goForwardUntilPallet() {
-  Serial.println("동작: 팔레트 감지 전진...");
-  goForward(SPEED_FWD);
-  unsigned long startTime = millis();
-  while (true) {
-    if (checkStop()) return;
-
-    float distL = getDistance(TRIG_PIN_L, ECHO_PIN_L);
-    float distR = getDistance(TRIG_PIN_R, ECHO_PIN_R);
-    if ((distL > 0 && distL <= STOP_DISTANCE) || (distR > 0 && distR <= STOP_DISTANCE)) {
-      stopMotors(); Serial.println(">> 도착"); break;
-    }
-    if (millis() - startTime > 3000) { stopMotors(); break; }
-    smartDelay(50); 
-  }
-}
-
-void turnAround() {
-  Serial.println("동작: 180도 피벗 회전 중...");
-  stopMotors(); smartDelay(200);
-  if (checkStop()) return;
-  
-  turnLeft(SPEED_PIVOT_HARD);
-  smartDelay(800); 
-  turnLeft(SPEED_SCAN); 
-
-  if (checkStop()) return;
-  unsigned long startTime = millis();
-  while (true) {
-    if (checkStop()) return;
-    int s3_val = analogRead(PIN_S3);
-    if (s3_val < 700) { stopMotors(); break; } 
-    if (millis() - startTime > 5000) { stopMotors(); break; } 
-  }
-  smartDelay(500);
-}
-
-void goForwardUntilLine() {
-  Serial.println("동작: 출구 전진 중...");
-  goForward(SPEED_FWD);
-  unsigned long startTime = millis();
-  while (true) {
-    if (checkStop()) return;
-    int s1 = digitalRead(PIN_S1);
-    int s5 = digitalRead(PIN_S5);
-    int s3 = analogRead(PIN_S3);
-    if (s1 == BLACK || s5 == BLACK || s3 < 700) { stopMotors(); break; }
-    if (millis() - startTime > 5000) { stopMotors(); break; }
-  }
-  smartDelay(500);
-}
-
-void goForwardUntilLineEnd() {
-  Serial.println("동작: 라인 끝까지 전진...");
-  goForward(SPEED_FWD);
-  unsigned long startTime = millis();
-  while (true) {
-    if (checkStop()) return;
-    int s1 = digitalRead(PIN_S1);
-    int s2 = digitalRead(PIN_S2);
-    int s5 = digitalRead(PIN_S5);
-    int s3_val = analogRead(PIN_S3);
-    int s3 = (s3_val < 700) ? BLACK : WHITE; 
-
-    if (s1 == WHITE && s2 == WHITE && s3 == WHITE && s5 == WHITE) {
-      stopMotors(); 
-      Serial.println(">> 라인 끝 감지! 정지.");
-      break; 
-    }
-    if (millis() - startTime > 5000) { stopMotors(); break; }
-  }
-  smartDelay(500);
-}
-
-void setForklift(int targetAngle) {
-  if (targetAngle > FORKLIFT_UP_ANGLE) targetAngle = FORKLIFT_UP_ANGLE;
-  if (targetAngle < FORKLIFT_DOWN_ANGLE) targetAngle = FORKLIFT_DOWN_ANGLE;
-  if (!forkliftServo.attached()) forkliftServo.attach(FORKLIFT_PIN, 500, 2400);
-  
-  if (currentForkliftAngle < targetAngle) {
-    for (int i = currentForkliftAngle; i <= targetAngle; i++) { 
-        if (checkStop()) return; 
-        forkliftServo.write(i); 
-        delay(8); 
-        checkStop();
-    }
-  } else {
-    for (int i = currentForkliftAngle; i >= targetAngle; i--) { 
-        if (checkStop()) return;
-        forkliftServo.write(i); 
-        delay(8); 
-        checkStop();
-    }
-  }
-  forkliftServo.write(targetAngle); 
-  currentForkliftAngle = targetAngle;
-}
-
-void rotateLeftUntilLine() {
-  Serial.println(">> 좌회전 (피벗)...");
-  stopMotors(); smartDelay(500); 
-  if (checkStop()) return;
-  
-  goForward(SPEED_FWD);
-  smartDelay(400); 
-  stopMotors(); smartDelay(100);
-  if (checkStop()) return;
-
-  turnLeft(SPEED_PIVOT_HARD); 
-  smartDelay(600); 
-  if (checkStop()) return;
-  
-  turnLeft(SPEED_SCAN); 
-
-  unsigned long startTime = millis();
-  while (true) {
-    if (checkStop()) return;
-    int s3_val = analogRead(PIN_S3);
-    if (s3_val < 700) { stopMotors(); break; }
-    if (millis() - startTime > 5000) { stopMotors(); break; }
-  }
-  smartDelay(500);
-}
-
-void rotateRightUntilLine() {
-  Serial.println(">> 우회전 (피벗)...");
-  stopMotors(); smartDelay(500);
-  if (checkStop()) return;
-
-  goForward(SPEED_FWD);
-  smartDelay(400);
-  stopMotors(); smartDelay(100);
-  if (checkStop()) return;
-  
-  turnRight(SPEED_PIVOT_HARD); 
-  smartDelay(600); 
-  if (checkStop()) return;
-  
-  turnRight(SPEED_SCAN);
-
-  unsigned long startTime = millis();
-  while (true) {
-    if (checkStop()) return;
-    int s3_val = analogRead(PIN_S3);
-    if (s3_val < 700) { stopMotors(); break; }
-    if (millis() - startTime > 5000) { stopMotors(); break; }
-  }
-  smartDelay(500);
-}
-
-void runLineFollower() {
-  if (checkStop()) return; 
-
-  int s1 = digitalRead(PIN_S1);
-  int s2 = digitalRead(PIN_S2);
-  int s5 = digitalRead(PIN_S5);
-  int s3_val = analogRead(PIN_S3);
-  int s3 = (s3_val < 700) ? BLACK : WHITE;
-
-  if (s1 == BLACK) t_s1 = millis();
-  if (s5 == BLACK) t_s5 = millis();
-  bool crossDetected = false;
-  unsigned long now = millis();
-
-  if ( (s1 == BLACK && s5 == BLACK) || 
-       ((now - t_s1 < 500) && (now - t_s5 < 500)) ||
-       (s1 == BLACK && s2 == BLACK && s3 == BLACK) || 
-       (s5 == BLACK && s2 == BLACK && s3 == BLACK) ) { 
-    crossDetected = true; 
-    t_s1 = 0; t_s5 = 0; 
-  }
-
-  if (crossDetected) {
-    if (millis() - lastStationTime < 2000) {
-        crossDetected = false;
-    } else {
-        lastStationTime = millis(); 
-        
-        lineCount++; 
-        Serial.print("Station: "); Serial.println(lineCount);
-        Serial.print("Target: "); Serial.println(targetZone);
-
-        if (lineCount > WAREHOUSE_LINE) { lineCount = 1; }
-
-        bool isTarget = false;
-        if (jobPhase == 1 && lineCount == targetZone) isTarget = true;
-        if (jobPhase == 2 && lineCount == WAREHOUSE_LINE) isTarget = true;
-        if (jobPhase == 3 && lineCount == targetZone) isTarget = true;
-
-        if (isTarget) {
-            stopMotors(); 
-            Serial.println(">> 목표 도착! 작업 시작.");
-            smartDelay(1000); 
-            
-            if (jobPhase == 1) { 
-                rotateLeftUntilLine(); if (checkStop()) return; 
-                setForklift(ANGLE_STEP); smartDelay(500); if (checkStop()) return;
-                goForwardUntilPallet(); if (checkStop()) return;
-                setForklift(ANGLE_STEP + LIFT_OFFSET); smartDelay(500); if (checkStop()) return;
-                
-                Serial.println("후진 및 회전...");
-                goBack(SPEED_FWD); smartDelay(600); stopMotors(); smartDelay(200); if (checkStop()) return;
-                turnAround(); if (checkStop()) return;
-                setForklift(ANGLE_TRANSPORT); 
-                goForwardUntilLine(); if (checkStop()) return;
-                rotateLeftUntilLine(); if (checkStop()) return;
-                jobPhase = 2; 
-            }
-            else if (jobPhase == 2) { 
-                rotateLeftUntilLine(); if (checkStop()) return;
-                goForwardUntilLineEnd(); if (checkStop()) return;
-                setForklift(ANGLE_FLOOR);      
-                goBack(SPEED_FWD); smartDelay(800); stopMotors(); 
-                smartDelay(5000); if (checkStop()) return;
-                setForklift(ANGLE_FLOOR);      
-                goForwardUntilLineEnd(); if (checkStop()) return;
-                setForklift(ANGLE_FLOOR + LIFT_OFFSET); 
-                goBack(SPEED_FWD); smartDelay(600); stopMotors(); smartDelay(200); if (checkStop()) return;
-                turnAround(); if (checkStop()) return;
-                setForklift(ANGLE_TRANSPORT); 
-                goForwardUntilLine(); if (checkStop()) return;
-                rotateLeftUntilLine(); if (checkStop()) return;
-                jobPhase = 3; 
-            }
-            else if (jobPhase == 3) { 
-                rotateLeftUntilLine(); if (checkStop()) return;
-                setForklift(ANGLE_STEP + LIFT_OFFSET);
-                goForwardUntilPallet(); if (checkStop()) return;
-                setForklift(ANGLE_STEP); 
-                goBack(SPEED_FWD); smartDelay(600); stopMotors(); smartDelay(200); if (checkStop()) return;
-                turnAround(); if (checkStop()) return;
-                goForwardUntilLine(); if (checkStop()) return;
-                rotateLeftUntilLine(); if (checkStop()) return;
-                stopMotors(); operatingMode = 0; jobPhase = 0; targetZone = 0; return; 
-            }
-        } else {
-            Serial.println(">> 통과 (Pass)");
-            goForward(SPEED_FWD); 
-            smartDelay(600); 
-            return; 
+void waitPause() {
+  while (isPaused) {
+    if (Serial.available() > 0) {
+        char c = Serial.read();
+        if (c == 'r' || c == 'R') {
+            isPaused = false;
+            Serial.println("RESUMED.");
         }
     }
-  }
-
-  if (s1 == BLACK) { turnLeft(SPEED_PIVOT_HARD); lastLineDirection = 1; }
-  else if (s5 == BLACK) { turnRight(SPEED_PIVOT_HARD); lastLineDirection = 2; }
-  else if (s2 == BLACK && s3 == WHITE) { turnLeft(SPEED_TURN_SOFT); lastLineDirection = 1; }
-  else if (s3 == BLACK && s2 == WHITE) { turnRight(SPEED_TURN_SOFT); lastLineDirection = 2; }
-  else if (s2 == BLACK || s3 == BLACK) { goForward(SPEED_LINE_MAX); lastLineDirection = 0; }
-  else { 
-    if (lastLineDirection == 1) turnLeft(SPEED_PIVOT_HARD); 
-    else if (lastLineDirection == 2) turnRight(SPEED_PIVOT_HARD); 
-    else stopMotors(); 
+    delay(10);
   }
 }
 
-void stopMotors() {
-  digitalWrite(IN1, LOW); digitalWrite(IN2, LOW); digitalWrite(IN3, LOW); digitalWrite(IN4, LOW);
-  pwm.setPWM(ENA_CHANNEL, 0, 0); pwm.setPWM(ENB_CHANNEL, 0, 0);
-}
-void goForward(int speed) {
-  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
-  pwm.setPWM(ENA_CHANNEL, 0, speed); pwm.setPWM(ENB_CHANNEL, 0, speed);
-}
-void goBack(int speed) {
-  digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);
-  pwm.setPWM(ENA_CHANNEL, 0, speed); pwm.setPWM(ENB_CHANNEL, 0, speed);
-}
-void turnLeft(int speed) {
-  digitalWrite(IN1, LOW); digitalWrite(IN2, LOW); 
-  pwm.setPWM(ENA_CHANNEL, 0, 0);
-  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); 
-  pwm.setPWM(ENB_CHANNEL, 0, speed);
-}
-void turnRight(int speed) {
-  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); 
-  pwm.setPWM(ENA_CHANNEL, 0, speed);
-  digitalWrite(IN3, LOW); digitalWrite(IN4, LOW); 
-  pwm.setPWM(ENB_CHANNEL, 0, 0);
+void safeDelay(unsigned long ms) {
+  unsigned long start = millis();
+  while (millis() - start < ms) {
+    checkSerial();
+    waitPause();
+    delay(5);
+  }
 }
 
-void sendHTMLPage() {
-    String html = "<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>";
-    html += "<style>body{font-family:sans-serif;text-align:center;padding:10px;background:#eee;}";
-    html += ".btn{padding:15px;margin:5px;font-size:18px;width:90%;max-width:300px;border-radius:10px;border:none;color:white;font-weight:bold; touch-action:manipulation; user-select:none;}";
-    html += ".nav{background:#555;} .taskA{background:#FF5733;} .taskB{background:#33FF57;color:#000;} .taskC{background:#3357FF;} .stop{background:#C70039;}";
-    html += ".lift{background:#F39C12; color:black;} h2{color:#333; margin-bottom:10px;}</style>";
-    html += "<script>function s(u){fetch(u).catch(()=>{});} function p(c){s('/'+c);}</script>";
-    html += "</head><body>";
-    html += "<h2>Smart Factory Control</h2>";
-    html += "<button class='btn taskA' onclick=\"p('taskA')\">TASK A (1번 구역)</button><br>";
-    html += "<button class='btn taskB' onclick=\"p('taskB')\">TASK B (2번 구역)</button><br>";
-    html += "<button class='btn taskC' onclick=\"p('taskC')\">TASK C (3번 구역)</button><br><br>";
-    html += "<button class='btn nav' onmousedown=\"p('forward')\" ontouchstart=\"p('forward')\" onmouseup=\"p('stop')\" ontouchend=\"p('stop')\">FORWARD</button><br>";
-    html += "<div style='display:flex;justify-content:center;'>";
-    html += "<button class='btn nav' style='width:45%' onmousedown=\"p('left')\" ontouchstart=\"p('left')\" onmouseup=\"p('stop')\" ontouchend=\"p('stop')\">LEFT</button>";
-    html += "<button class='btn nav' style='width:45%' onmousedown=\"p('right')\" ontouchstart=\"p('right')\" onmouseup=\"p('stop')\" ontouchend=\"p('stop')\">RIGHT</button></div>";
-    html += "<button class='btn nav' onmousedown=\"p('backward')\" ontouchstart=\"p('backward')\" onmouseup=\"p('stop')\" ontouchend=\"p('stop')\">BACKWARD</button><br>";
-    html += "<div style='display:flex;justify-content:center; margin-top:10px; flex-wrap:wrap;'>";
-    html += "<button class='btn lift' style='width:45%' onmousedown=\"p('liftup')\" ontouchstart=\"p('liftup')\">LIFT UP (63)</button>";
-    html += "<button class='btn lift' style='width:45%' onmousedown=\"p('liftstep')\" ontouchstart=\"p('liftstep')\">LIFT STEP (53)</button>";
-    html += "<button class='btn lift' style='width:90%; margin-top:5px;' onmousedown=\"p('liftdown')\" ontouchstart=\"p('liftdown')\">LIFT DOWN (15)</button></div><br>";
-    html += "<button class='btn stop' onclick=\"p('stop')\">STOP ALL</button>";
-    html += "</body></html>";
-    server.send(200, "text/html", html);
+void moveSmooth(const Pose& tgt, int delayMs) {
+  Pose cur = readPose();
+  while (cur.b != tgt.b || cur.s != tgt.s || cur.e != tgt.e ||
+         cur.wp != tgt.wp || cur.wr != tgt.wr || cur.g != tgt.g) {
+    checkSerial();
+    waitPause();
+
+    if (cur.b  < tgt.b)  cur.b++; else if (cur.b  > tgt.b)  cur.b--;
+    if (cur.s  < tgt.s)  cur.s++; else if (cur.s  > tgt.s)  cur.s--;
+    if (cur.e  < tgt.e)  cur.e++; else if (cur.e  > tgt.e)  cur.e--;
+    if (cur.wp < tgt.wp) cur.wp++; else if (cur.wp > tgt.wp) cur.wp--;
+    if (cur.wr < tgt.wr) cur.wr++; else if (cur.wr > tgt.wr) cur.wr--;
+    if (cur.g  < tgt.g)  cur.g++; else if (cur.g  > tgt.g)  cur.g--;
+
+    writePose(cur);
+    safeDelay(delayMs);
+  }
+}
+
+// ======================= Pick / Place =======================
+
+void pickFromHome() {
+  attachGripIfNeeded();
+  moveSmooth(HOME, 15);
+  safeDelay(200);
+  moveSmooth(PICK_ABOVE, 15);
+  safeDelay(100);
+  moveSmooth(PICK_DOWN, 25);
+  safeDelay(200);
+
+  Pose cur = readPose();
+  cur.g = GRIP_HOLD;
+  moveSmooth(cur, 15);
+  safeDelay(100);
+
+  moveSmooth(LIFT_FROM_PICK, 15);
+  safeDelay(80);
+  moveSmooth(CARRY_MID, 15);
+  safeDelay(80);
+}
+
+void placeToSlot(const Pose above[4], const Pose touch[4], const Pose lift[4], int slotIndex) {
+  if (slotIndex < 0) slotIndex = 0;
+  if (slotIndex > 3) slotIndex = 3;
+
+  moveSmooth(above[slotIndex], 15);
+  safeDelay(100);
+  moveSmooth(touch[slotIndex], 25);
+  safeDelay(150);
+
+  Pose cur = readPose();
+  cur.g = GRIP_OPEN;
+  moveSmooth(cur, 15);
+  safeDelay(150);
+
+  moveSmooth(lift[slotIndex], 15);
+  safeDelay(80);
+  moveSmooth(HOME, 15);
+  safeDelay(150);
+  detachGrip();
+}
+
+// ======================= Setup =======================
+
+void setup() {
+  Serial.begin(9600);
+  Serial.println("System Ready. Waiting for Weight...");
+
+  sBase.attach(BASE_PIN);
+  sShoulder.attach(SHOULDER_PIN);
+  sElbow.attach(ELBOW_PIN);
+  sWristP.attach(WRIST_P_PIN);
+  sWristR.attach(WRIST_R_PIN);
+  
+  attachGripIfNeeded();      
+  writePose(HOME);
+  safeDelay(1000);
+  detachGrip();              
+
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  lcd.print("Calibrating...");
+
+  scale.begin(DOUT_PIN, SCK_PIN);
+  scale.set_scale(calibration_factor);
+  safeDelay(2000);
+  scale.tare();
+
+  Serial.println("Zeroing Complete.");
+  lcd.clear();
+  lcd.print("Ready...");
+  lcd.setCursor(0,1);
+  lcd.print("Put object");
+}
+
+// ======================= Loop =======================
+
+void loop() {
+  checkSerial();
+  waitPause();
+
+  float currentWeight = scale.get_units(5);
+
+  // -------- 상태 1 : 대기 --------
+  if (weightState == 1) {
+    if (currentWeight > WEIGHING_THRESHOLD) {
+      lcd.clear();
+      lcd.print("Weighing...");
+      weightState = 2;
+    }
+  }
+
+  // -------- 상태 2 : 측정 -> 통신 -> 이동 -> (Full체크) --------
+  else if (weightState == 2) {
+    safeDelay(3000); // 3초 안정화
+
+    float m1 = scale.get_units(10);
+    safeDelay(200);
+    float m2 = scale.get_units(10);
+    safeDelay(200);
+    float m3 = scale.get_units(10);
+    float avg = (m1 + m2 + m3) / 3.0;
+
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("W: "); lcd.print(avg, 2);
+    lcd.setCursor(0,1);
+    lcd.print("Req Inspection..");
+
+    // 1. PC에 검사 요청
+    Serial.println("REQ_INSPECT"); 
+    
+    // 2. PC 응답 대기
+    char targetZone = 0;
+    while (targetZone == 0) {
+        if (Serial.available() > 0) {
+            char c = Serial.read();
+            if (c == 'q' || c == 'Q') { isPaused = true; Serial.println("STOPPED."); }
+            else if (c == 'r' || c == 'R') { isPaused = false; Serial.println("RESUMED."); }
+            else if (!isPaused) {
+                if (c == 'A' || c == 'B' || c == 'C' || c == 'D') {
+                    targetZone = c;
+                }
+            }
+        }
+        while (isPaused) {
+            if (Serial.available() > 0) {
+                char c = Serial.read();
+                if (c == 'r' || c == 'R') { isPaused = false; Serial.println("RESUMED."); }
+            }
+            delay(10);
+        }
+        delay(10);
+    }
+
+    // 3. 구역 인덱스 변환 및 슬롯 계산
+    int zoneIdx = -1;
+    if      (targetZone == 'A') zoneIdx = 0;
+    else if (targetZone == 'B') zoneIdx = 1;
+    else if (targetZone == 'C') zoneIdx = 2;
+    else if (targetZone == 'D') zoneIdx = 3;
+
+    if (zoneIdx != -1) {
+        // 현재 채워야 할 슬롯 번호 (0~3)
+        int currentSlot = zoneCounts[zoneIdx]; 
+
+        lcd.setCursor(0,1);
+        lcd.print("Zone:"); lcd.print(targetZone);
+        lcd.print(" Slot:"); lcd.print(currentSlot + 1);
+
+        Serial.print("Zone: "); Serial.print(targetZone);
+        Serial.print(", Slot: "); Serial.println(currentSlot + 1);
+
+        // 4. 로봇 이동 (Pick -> Place)
+        pickFromHome();
+
+        if      (zoneIdx == 0) placeToSlot(A_ABOVE, A_TOUCH, A_LIFT, currentSlot);
+        else if (zoneIdx == 1) placeToSlot(B_ABOVE, B_TOUCH, B_LIFT, currentSlot);
+        else if (zoneIdx == 2) placeToSlot(C_ABOVE, C_TOUCH, C_LIFT, currentSlot);
+        else if (zoneIdx == 3) placeToSlot(D_ABOVE, D_TOUCH, D_LIFT, currentSlot);
+
+        // 5. 카운트 증가
+        zoneCounts[zoneIdx]++;
+
+        // 6. [중요] 해당 구역이 꽉 찼는지 확인 (4개가 되면)
+        if (zoneCounts[zoneIdx] >= 4) {
+            lcd.clear();
+            lcd.setCursor(0,0);
+            lcd.print("Zone "); lcd.print(targetZone); lcd.print(" FULL!");
+            lcd.setCursor(0,1);
+            lcd.print("Call AGV...");
+            Serial.print("ZONE_FULL_"); Serial.println(targetZone); // PC나 AGV가 알 수 있게 출력
+
+            // *** 여기에 나중에 아두이노 카(AGV) 호출 코드를 넣으면 됨 ***
+            // 예: Serial1.println("GO_A"); 
+            
+            safeDelay(3000); // AGV가 와서 가져가는 시간 시뮬레이션 (3초 대기)
+
+            // 팔레트가 비워졌으므로 카운트 리셋
+            zoneCounts[zoneIdx] = 0; 
+            Serial.println("Zone Reset. Ready.");
+        }
+    }
+
+    lcd.clear();
+    lcd.print("Remove object");
+    weightState = 3;
+  }
+
+  // -------- 상태 3 : 제거 대기 --------
+  else if (weightState == 3) {
+    if (fabs(currentWeight) < ZERO_THRESHOLD) {   
+      lcd.clear();
+      lcd.print("Zeroing...");
+      safeDelay(500); 
+      scale.tare();
+      lcd.clear();
+      lcd.print("Ready...");
+      lcd.setCursor(0,1);
+      lcd.print("Put object");
+      weightState = 1;
+    }
+  }
+  safeDelay(100);
 }
